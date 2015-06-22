@@ -10,6 +10,9 @@
   "license": "BSD-2-Clause",
   "dependencies": {
     "q" : "1.0.0",
-    "async" : "1.2.1"
+    "async" : "1.2.1",
+    "underscore" : "1.8.3",
+    "node-rest-client" : "1.5.1",
+    "async-q" : "*"
   }
 }

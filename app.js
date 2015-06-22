@@ -1,107 +1,114 @@
-function Activity(worker) {
-  this.run = function() {
-    worker(function(error, result) {
-
-    });
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 var async = require("async");
+var asyncQ = require("async-q");
 var Q = require("Q");
-
-var createNotification = function(data, callback) {
-  setTimeout(function(){
-    console.log("createNotification");
-    callback(null, data.id);
-  }, 300);
-}
-
-var getNotificationCTR = function(notificationId, callback) {
-  var results = {
-    "1" : 0.5,
-    "2" : 0.1252,
-  }
-  setTimeout(function(){
-    console.log("getNotificationCTR");
-    callback(null, results[notificationId]);
-  }, 300);
-}
+var _ = require("underscore");
+var Client = require('node-rest-client').Client;
 
 
-function ParallelActivity(/*
-  arguments
-*/) {
-
-  var deferred = Q.defer();
-  async.parallel(arguments, function(error, results){
-    if (error) {
-      deferred.reject(new Error(error));
-    } else {
-      deferred.resolve(results);
-    }
-  });
-  return deferred.promise;
-}
-
-ParallelActivity(
-  function(callback){
-    createNotification({id: "1"}, callback);
+var Activities = {
+  GetJSONAcitivity: function(url) {
+    var deferred = Q.defer();
+    client = new Client();
+    client.get(url, function(data, response){
+      json = JSON.parse(data);
+      deferred.resolve(json);
+    });
+    return deferred.promise;
   },
-  function(callback){
-    createNotification({id: "2"}, callback);
+  GetMaxByKeyActivity: function(datas, key) {
+    return Q( _.max(datas, function(data){ return data[key]; }) );
+  },
+  GetMinByKeyActivity: function(datas, key) {
+    return Q( _.max(datas, function(data){ return data[key]; }) );
+  },
+  ParallelActivity: function(subActivities) {
+    return asyncQ.parallel(subActivities);
+  },
+  LoggingActivity: function(logInput) {
+    console.log(logInput);
+    return Q(logInput);
   }
-).then(function(results){
-  return ParallelActivity(results.
-    function(callback){
-      getNotificationCTR(results[0], callback);
-    },
-    function(callback){
-      getNotificationCTR(results[1], callback);
+};
+
+function parseActivityArguments(args, context) {
+  return _.map(args, function(arg){
+    if (_.isArray(arg)) {
+      return parseActivityArguments(arg);
+    } else if (_.isObject(arg) && arg.type && arg.arguments) {
+      return deserializeActivity(arg);
+    } else {
+      if (arg == "$previousResult") {
+        return context;
+      } else {
+        return arg;
+      }
     }
-  )
-}).then(function(results){
-  console.log(results);
+  })
+}
+
+function deserializeActivity(json) {
+  var activityType = Activities[json.type];
+
+  if (!activityType)
+    console.log(activityType, " not exist.");
+
+  return function(result) {
+    return activityType.apply(null, parseActivityArguments(json.arguments, result));
+  }
+}
+
+
+var promise = null;
+
+_.each([
+  {
+    type: "ParallelActivity",
+    arguments: [
+      [
+        {
+          type: "GetJSONAcitivity",
+          arguments: ["https://www.vingle.net/api/cards/123456"]
+        },
+        {
+          type: "GetJSONAcitivity",
+          arguments: ["https://www.vingle.net/api/cards/234567"]
+        }
+      ]
+    ]
+  }
+  , {
+    type: "ParallelActivity",
+    arguments: [
+      [
+        {
+          type: "GetJSONAcitivity",
+          arguments: ["https://www.vingle.net/api/cards/123456"]
+        },
+        {
+          type: "GetJSONAcitivity",
+          arguments: ["https://www.vingle.net/api/cards/234567"]
+        }
+      ]
+    ]
+  }
+  , {
+    type: "GetMaxByKeyActivity",
+    arguments: [
+      "$previousResult",
+      "likes_count"
+    ]
+  }
+  , {
+    type: "LoggingActivity",
+    arguments: [
+      "$previousResult"
+    ]
+  }
+], function(activity) {
+  var newActivity = deserializeActivity(activity);
+  if (promise) {
+    promise = promise.then(newActivity);
+  } else {
+    promise = newActivity();
+  }
 });
-
-// function A(){
-//   async.parallel([
-    // function(callback){
-    //   createNotification({id: "1"}, callback);
-    // },
-    // function(callback){
-    //   createNotification({id: "2"}, callback);
-    // }
-//   ],function(err, results){
-//     // console.log(results);
-//   });
-// }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

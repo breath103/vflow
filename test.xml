@@ -1,0 +1,16 @@
+<root>
+  <ParallelActivity>
+    <arguments>
+      <GetJSONAcitivity url="https://www.vingle.net/api/cards/896822"></GetJSONAcitivity>
+      <GetJSONAcitivity url="https://www.vingle.net/api/cards/896822"></GetJSONAcitivity>
+    </arguments>
+    <then>
+      <GetMaxByKeyActivity>
+        <arguments>
+          <valueReference name="results" />
+          <value name="likes_count" />
+        </arguments>
+      </GetMaxByKeyActivity>
+    </then>
+  </ParallelActivity>
+</root>
