@@ -1,77 +1,6 @@
-var async = require("async");
-var asyncQ = require("async-q");
-var Q = require("Q");
-var _ = require("underscore");
-var Client = require('node-rest-client').Client;
-
-var Activity = function(name, promiseGenerator) {
-  STATUS = {
-    WAIT: "WAIT",
-    RUNNING: "RUNNING", 
-    FINISHED: "FINISHED"
-  };
-
-  var _name = name;
-  var _status = STATUS.WAIT;
-  this.setStatus = function(status) {
-    console.log(name, status);
-    _status = status;
-  }
-  this.getStatus = function() {
-    return _status;
-  }
-
-  var self = this;
-  this.run = function(generatorArguments) {
-    if (self.getStatus() != STATUS.WAIT) {
-      throw new Error("This Activity already " + self.getStatus());
-      return;
-    }
-    self.setStatus(STATUS.RUNNING);
-    return promiseGenerator.apply(self, generatorArguments).then(function(result) {
-      self.setStatus(STATUS.FINISHED);
-      return Q(result);
-    });
-  }
-};
-
-function AcitivtyFactory(name, runner) {
-  return function() {
-    var activity = new Activity(name, runner);
-    return activity.run(arguments)
-  };
-}
-
-var Activities = {};
-
-Activities["GetJSONAcitivity"] = AcitivtyFactory("GetJSONAcitivity", function(url) {
-  var deferred = Q.defer();
-  client = new Client();
-  client.get(url, function(data, response){
-    json = JSON.parse(data);
-    deferred.resolve(json);
-  });
-  return deferred.promise;
-});
-
-Activities["GetMaxByKeyActivity"] = AcitivtyFactory("GetMaxByKeyActivity", function(datas, key) {
-  maxValue = _.max(datas, function(data){ return data[key]; });
-  return Q( maxValue );
-});
-
-Activities["GetMinByKeyActivity"] = AcitivtyFactory("GetMinByKeyActivity", function(datas, key) {
-  return Q( _.max(datas, function(data){ return data[key]; }) );
-});
-
-Activities["ParallelActivity"] = AcitivtyFactory("ParallelActivity",function(subActivities) {
-  return asyncQ.parallel(subActivities);
-});
-
-Activities["LoggingActivity"] = AcitivtyFactory("LoggingActivity", function(logInput) {
-  console.log(logInput.id);
-  return Q(logInput);
-});
-
+var Q      = require("Q");
+var _      = require("underscore");
+var Activities = require("./activities.js");
 
 
 var jsonActivities = [
@@ -106,12 +35,16 @@ var jsonActivities = [
 ];
 
 function ActivityRunner() {
-  var _parseActivityArguments = function(args, context) {
+  var _parseActivityArguments = function(args, context, depth) {
+    if (arguments.length != 3) {
+      throw new Error(arguments.length);
+    }
+
     return _.map(args, function(arg){
       if (_.isArray(arg)) {
-        return _parseActivityArguments(arg);
+        return _parseActivityArguments(arg, null, depth + 1);
       } else if (_.isObject(arg) && arg.type && arg.arguments) {
-        return _deserializeActivity(arg);
+        return _deserializeActivityWithArguments(arg, depth);
       } else {
         if (arg == "$previousResult") {
           return context;
@@ -122,21 +55,20 @@ function ActivityRunner() {
     })
   }
   
-  var _deserializeActivity = function(json) {
-    var activityType = Activities[json.type];
-
-    if (!activityType)
-      console.log(activityType, " not exist.");
-
+  var _deserializeActivityWithArguments = function(json, depth) {
     return function(result) {
-      return activityType.apply(null, _parseActivityArguments(json.arguments, result));
+      var activityType = Activities[json.type];
+      if (!activityType) { throw new Error(activityType + " not exist."); }
+
+      var newActivity = new activityType();
+      return newActivity.run(_parseActivityArguments(json.arguments, result, depth), depth);
     }
   }
 
   this.run = function(jsonActivities) {
     var promise = null;
     _.each(jsonActivities, function(activity) {
-      var newActivity = _deserializeActivity(activity);
+      var newActivity = _deserializeActivityWithArguments(activity, 0);
       if (promise) {
         promise = promise.then(newActivity);
       } else {
